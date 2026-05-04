@@ -6,9 +6,9 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { updateProjectGithubRepo } from "@/actions/update-project-github";
-import { Github, Camera, ExternalLink, AlertCircle, Check, X } from "lucide-react";
+import { Github, Camera, ExternalLink, AlertCircle, Check, X, GitPullRequest, MessageSquare } from "lucide-react";
 
-type View = "token" | "repo" | "issue" | "success";
+type View = "token" | "repo" | "home" | "issue" | "pr" | "success";
 
 interface GitHubDialogProps {
   open: boolean;
@@ -17,7 +17,15 @@ interface GitHubDialogProps {
   githubRepo: string | null;
   onRepoSaved: (repo: string) => void;
   onCaptureScreenshot: () => Promise<string>;
+  onGetFiles: () => Map<string, string>;
 }
+
+const slugify = (text: string) =>
+  text
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "")
+    .slice(0, 50);
 
 export function GitHubDialog({
   open,
@@ -26,16 +34,26 @@ export function GitHubDialog({
   githubRepo,
   onRepoSaved,
   onCaptureScreenshot,
+  onGetFiles,
 }: GitHubDialogProps) {
-  const [view, setView] = useState<View>("issue");
+  const [view, setView] = useState<View>("home");
   const [token, setToken] = useState("");
   const [repoInput, setRepoInput] = useState(githubRepo || "");
-  const [title, setTitle] = useState("");
-  const [description, setDescription] = useState("");
+
+  // Issue state
+  const [issueTitle, setIssueTitle] = useState("");
+  const [issueDescription, setIssueDescription] = useState("");
   const [screenshot, setScreenshot] = useState<string | null>(null);
+
+  // PR state
+  const [prTitle, setPrTitle] = useState("");
+  const [prDescription, setPrDescription] = useState("");
+  const [prBranch, setPrBranch] = useState("");
+
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [issueUrl, setIssueUrl] = useState<string | null>(null);
+  const [resultUrl, setResultUrl] = useState<string | null>(null);
+  const [successType, setSuccessType] = useState<"issue" | "pr">("issue");
 
   useEffect(() => {
     if (!open) return;
@@ -43,22 +61,30 @@ export function GitHubDialog({
     setToken(savedToken);
     setRepoInput(githubRepo || "");
     setError(null);
-    setIssueUrl(null);
-    setTitle("");
-    setDescription("");
+    setResultUrl(null);
+    setIssueTitle("");
+    setIssueDescription("");
+    setPrTitle("");
+    setPrDescription("");
+    setPrBranch("");
     setScreenshot(null);
 
     if (!savedToken) setView("token");
     else if (!githubRepo) setView("repo");
-    else setView("issue");
+    else setView("home");
   }, [open, githubRepo]);
+
+  // Branch-Name aus PR-Titel ableiten
+  useEffect(() => {
+    if (prTitle) setPrBranch(`uigen/${slugify(prTitle)}`);
+  }, [prTitle]);
 
   const handleSaveToken = () => {
     if (!token.trim()) return;
     localStorage.setItem("github-token", token.trim());
     setError(null);
     if (!githubRepo) setView("repo");
-    else setView("issue");
+    else setView("home");
   };
 
   const handleSaveRepo = async () => {
@@ -72,7 +98,7 @@ export function GitHubDialog({
     try {
       await updateProjectGithubRepo(projectId, trimmed);
       onRepoSaved(trimmed);
-      setView("issue");
+      setView("home");
     } catch {
       setError("Speichern fehlgeschlagen");
     } finally {
@@ -93,8 +119,8 @@ export function GitHubDialog({
     }
   };
 
-  const handleSubmit = async () => {
-    if (!title.trim()) {
+  const handleSubmitIssue = async () => {
+    if (!issueTitle.trim()) {
       setError("Titel ist erforderlich");
       return;
     }
@@ -107,14 +133,15 @@ export function GitHubDialog({
         body: JSON.stringify({
           token: localStorage.getItem("github-token"),
           repo: githubRepo,
-          title: title.trim(),
-          body: description.trim(),
+          title: issueTitle.trim(),
+          body: issueDescription.trim(),
           screenshotBase64: screenshot,
         }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
-      setIssueUrl(data.url);
+      setResultUrl(data.url);
+      setSuccessType("issue");
       setView("success");
     } catch (e) {
       setError(e instanceof Error ? e.message : "Fehler beim Erstellen des Issues");
@@ -123,13 +150,58 @@ export function GitHubDialog({
     }
   };
 
-  const handleNewIssue = () => {
-    setTitle("");
-    setDescription("");
+  const handleSubmitPr = async () => {
+    if (!prTitle.trim()) {
+      setError("Titel ist erforderlich");
+      return;
+    }
+    if (!prBranch.trim()) {
+      setError("Branch-Name ist erforderlich");
+      return;
+    }
+    setLoading(true);
+    setError(null);
+    try {
+      const files = onGetFiles();
+      const filesObj: Record<string, string> = {};
+      files.forEach((content, path) => {
+        filesObj[path] = content;
+      });
+
+      const res = await fetch("/api/github/pr", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          token: localStorage.getItem("github-token"),
+          repo: githubRepo,
+          title: prTitle.trim(),
+          body: prDescription.trim(),
+          branch: prBranch.trim(),
+          files: filesObj,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      setResultUrl(data.url);
+      setSuccessType("pr");
+      setView("success");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Fehler beim Erstellen des Pull Requests");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleReset = () => {
+    setIssueTitle("");
+    setIssueDescription("");
+    setPrTitle("");
+    setPrDescription("");
+    setPrBranch("");
     setScreenshot(null);
     setError(null);
-    setIssueUrl(null);
-    setView("issue");
+    setResultUrl(null);
+    setView("home");
   };
 
   return (
@@ -138,7 +210,7 @@ export function GitHubDialog({
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Github className="h-5 w-5" />
-            GitHub Issue erstellen
+            GitHub
           </DialogTitle>
         </DialogHeader>
 
@@ -160,7 +232,7 @@ export function GitHubDialog({
               />
             </div>
             <p className="text-xs text-neutral-400">
-              Wird nur lokal in deinem Browser gespeichert — nie an den Server gesendet.
+              Wird nur lokal in deinem Browser gespeichert.
             </p>
             {error && <ErrorMsg text={error} />}
             <Button onClick={handleSaveToken} disabled={!token.trim()} className="w-full">
@@ -172,8 +244,7 @@ export function GitHubDialog({
         {view === "repo" && (
           <div className="space-y-4">
             <p className="text-sm text-neutral-600">
-              Welches GitHub-Repo gehört zu diesem Projekt? Das wird einmal gespeichert und
-              automatisch für alle Issues verwendet.
+              Welches GitHub-Repo gehört zu diesem Projekt?
             </p>
             <div className="space-y-2">
               <Label htmlFor="repo">Repository</Label>
@@ -190,14 +261,44 @@ export function GitHubDialog({
               <Button variant="outline" onClick={() => setView("token")} className="flex-1">
                 Zurück
               </Button>
-              <Button
-                onClick={handleSaveRepo}
-                disabled={loading || !repoInput.trim()}
-                className="flex-1"
-              >
+              <Button onClick={handleSaveRepo} disabled={loading || !repoInput.trim()} className="flex-1">
                 {loading ? "Speichern..." : "Verknüpfen"}
               </Button>
             </div>
+          </div>
+        )}
+
+        {view === "home" && (
+          <div className="space-y-3">
+            <p className="text-xs text-neutral-500">
+              Repo: <code className="bg-neutral-100 px-1 rounded">{githubRepo}</code>{" "}
+              <button onClick={() => setView("repo")} className="underline hover:text-neutral-700">
+                ändern
+              </button>
+            </p>
+            <button
+              onClick={() => setView("issue")}
+              className="w-full flex items-center gap-3 rounded-lg border border-neutral-200 p-4 text-left hover:bg-neutral-50 transition-colors"
+            >
+              <MessageSquare className="h-5 w-5 text-neutral-500 shrink-0" />
+              <div>
+                <p className="font-medium text-sm">Issue erstellen</p>
+                <p className="text-xs text-neutral-500">Bug oder Feature als GitHub Issue melden</p>
+              </div>
+            </button>
+            <button
+              onClick={() => setView("pr")}
+              className="w-full flex items-center gap-3 rounded-lg border border-neutral-200 p-4 text-left hover:bg-neutral-50 transition-colors"
+            >
+              <GitPullRequest className="h-5 w-5 text-neutral-500 shrink-0" />
+              <div>
+                <p className="font-medium text-sm">Pull Request erstellen</p>
+                <p className="text-xs text-neutral-500">Generierten Code als PR pushen</p>
+              </div>
+            </button>
+            <Button variant="ghost" size="sm" onClick={() => setView("token")} className="w-full text-xs text-neutral-400">
+              Token ändern
+            </Button>
           </div>
         )}
 
@@ -205,35 +306,31 @@ export function GitHubDialog({
           <div className="space-y-4">
             <div className="flex items-center justify-between text-xs text-neutral-500">
               <span>
-                Repo:{" "}
-                <code className="bg-neutral-100 px-1 rounded">{githubRepo}</code>
+                Repo: <code className="bg-neutral-100 px-1 rounded">{githubRepo}</code>
               </span>
-              <button
-                onClick={() => setView("repo")}
-                className="underline hover:text-neutral-700"
-              >
-                ändern
+              <button onClick={() => setView("home")} className="underline hover:text-neutral-700">
+                zurück
               </button>
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="title">Titel *</Label>
+              <Label htmlFor="issue-title">Titel *</Label>
               <Input
-                id="title"
+                id="issue-title"
                 placeholder="Kurze Beschreibung"
-                value={title}
-                onChange={(e) => setTitle(e.target.value)}
+                value={issueTitle}
+                onChange={(e) => setIssueTitle(e.target.value)}
               />
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="description">Beschreibung</Label>
+              <Label htmlFor="issue-description">Beschreibung</Label>
               <textarea
-                id="description"
+                id="issue-description"
                 className="w-full min-h-[80px] rounded-md border border-input bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring resize-none"
                 placeholder="Details zum Issue..."
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
+                value={issueDescription}
+                onChange={(e) => setIssueDescription(e.target.value)}
               />
             </div>
 
@@ -241,11 +338,7 @@ export function GitHubDialog({
               <Label>Screenshot</Label>
               {screenshot ? (
                 <div className="relative rounded border overflow-hidden">
-                  <img
-                    src={screenshot}
-                    alt="Preview-Screenshot"
-                    className="w-full max-h-36 object-cover"
-                  />
+                  <img src={screenshot} alt="Preview-Screenshot" className="w-full max-h-36 object-cover" />
                   <button
                     onClick={() => setScreenshot(null)}
                     className="absolute top-1 right-1 bg-black/60 text-white rounded-full p-0.5 hover:bg-black/80"
@@ -254,12 +347,7 @@ export function GitHubDialog({
                   </button>
                 </div>
               ) : (
-                <Button
-                  variant="outline"
-                  onClick={handleCapture}
-                  disabled={loading}
-                  className="w-full gap-2"
-                >
+                <Button variant="outline" onClick={handleCapture} disabled={loading} className="w-full gap-2">
                   <Camera className="h-4 w-4" />
                   {loading ? "Lädt..." : "Screenshot aufnehmen"}
                 </Button>
@@ -268,23 +356,64 @@ export function GitHubDialog({
 
             {error && <ErrorMsg text={error} />}
 
-            <div className="flex gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setView("token")}
-                className="shrink-0"
-              >
-                Token
-              </Button>
-              <Button
-                onClick={handleSubmit}
-                disabled={loading || !title.trim()}
-                className="flex-1"
-              >
-                {loading ? "Erstelle Issue..." : "Issue erstellen"}
-              </Button>
+            <Button onClick={handleSubmitIssue} disabled={loading || !issueTitle.trim()} className="w-full">
+              {loading ? "Erstelle Issue..." : "Issue erstellen"}
+            </Button>
+          </div>
+        )}
+
+        {view === "pr" && (
+          <div className="space-y-4">
+            <div className="flex items-center justify-between text-xs text-neutral-500">
+              <span>
+                Repo: <code className="bg-neutral-100 px-1 rounded">{githubRepo}</code>
+              </span>
+              <button onClick={() => setView("home")} className="underline hover:text-neutral-700">
+                zurück
+              </button>
             </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="pr-title">Titel *</Label>
+              <Input
+                id="pr-title"
+                placeholder="z.B. Add landing page component"
+                value={prTitle}
+                onChange={(e) => setPrTitle(e.target.value)}
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="pr-branch">Branch-Name</Label>
+              <Input
+                id="pr-branch"
+                placeholder="uigen/mein-feature"
+                value={prBranch}
+                onChange={(e) => setPrBranch(e.target.value)}
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="pr-description">Beschreibung</Label>
+              <textarea
+                id="pr-description"
+                className="w-full min-h-[80px] rounded-md border border-input bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring resize-none"
+                placeholder="Was wurde geändert?"
+                value={prDescription}
+                onChange={(e) => setPrDescription(e.target.value)}
+              />
+            </div>
+
+            <p className="text-xs text-neutral-400">
+              Alle {onGetFiles().size} Dateien aus dem aktuellen Projekt werden in den PR committed.
+            </p>
+
+            {error && <ErrorMsg text={error} />}
+
+            <Button onClick={handleSubmitPr} disabled={loading || !prTitle.trim() || !prBranch.trim()} className="w-full gap-2">
+              <GitPullRequest className="h-4 w-4" />
+              {loading ? "Erstelle Pull Request..." : "Pull Request erstellen"}
+            </Button>
           </div>
         )}
 
@@ -293,20 +422,22 @@ export function GitHubDialog({
             <div className="rounded-full bg-green-100 p-3">
               <Check className="h-6 w-6 text-green-600" />
             </div>
-            <p className="font-medium">Issue erfolgreich erstellt!</p>
-            {issueUrl && (
+            <p className="font-medium">
+              {successType === "pr" ? "Pull Request erfolgreich erstellt!" : "Issue erfolgreich erstellt!"}
+            </p>
+            {resultUrl && (
               <a
-                href={issueUrl}
+                href={resultUrl}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="inline-flex items-center gap-1 text-sm text-blue-600 hover:underline"
               >
-                Issue auf GitHub öffnen
+                {successType === "pr" ? "PR auf GitHub öffnen" : "Issue auf GitHub öffnen"}
                 <ExternalLink className="h-3 w-3" />
               </a>
             )}
-            <Button variant="outline" onClick={handleNewIssue} className="w-full">
-              Weiteres Issue erstellen
+            <Button variant="outline" onClick={handleReset} className="w-full">
+              Zurück zur Übersicht
             </Button>
           </div>
         )}

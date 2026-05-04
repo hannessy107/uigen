@@ -31,6 +31,7 @@ interface HeaderActionsProps {
   projectId?: string;
   initialGithubRepo?: string | null;
   onCaptureScreenshot?: () => Promise<string>;
+  onGetFiles?: () => Map<string, string>;
 }
 
 interface Project {
@@ -45,6 +46,7 @@ export function HeaderActions({
   projectId,
   initialGithubRepo,
   onCaptureScreenshot,
+  onGetFiles,
 }: HeaderActionsProps) {
   const router = useRouter();
   const [authDialogOpen, setAuthDialogOpen] = useState(false);
@@ -163,14 +165,14 @@ export function HeaderActions({
         </Popover>
       )}
 
-      {projectId && onCaptureScreenshot && (
+      {projectId && onCaptureScreenshot && onGetFiles && (
         <>
           <Button
             variant="outline"
             size="icon"
             className="h-8 w-8"
             onClick={() => setGithubDialogOpen(true)}
-            title="GitHub Issue erstellen"
+            title="GitHub"
           >
             <Github className="h-4 w-4" />
           </Button>
@@ -182,6 +184,7 @@ export function HeaderActions({
             githubRepo={githubRepo}
             onRepoSaved={setGithubRepo}
             onCaptureScreenshot={onCaptureScreenshot}
+            onGetFiles={onGetFiles}
           />
         </>
       )}

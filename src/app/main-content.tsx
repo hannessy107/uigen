@@ -1,12 +1,12 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useRef, useState, forwardRef, useImperativeHandle } from "react";
 import {
   ResizableHandle,
   ResizablePanel,
   ResizablePanelGroup,
 } from "@/components/ui/resizable";
-import { FileSystemProvider } from "@/lib/contexts/file-system-context";
+import { FileSystemProvider, useFileSystem } from "@/lib/contexts/file-system-context";
 import { ChatProvider } from "@/lib/contexts/chat-context";
 import { ChatInterface } from "@/components/chat/ChatInterface";
 import { ModelProgressBar } from "@/components/chat/ModelProgressBar";
@@ -32,18 +32,37 @@ interface MainContentProps {
   };
 }
 
+interface FileSystemBridgeHandle {
+  getAllFiles: () => Map<string, string>;
+}
+
+// Brücke um aus MainContent heraus auf den FileSystemContext zuzugreifen
+const FileSystemBridge = forwardRef<FileSystemBridgeHandle>((_, ref) => {
+  const { getAllFiles } = useFileSystem();
+  useImperativeHandle(ref, () => ({ getAllFiles }));
+  return null;
+});
+FileSystemBridge.displayName = "FileSystemBridge";
+
 export function MainContent({ user, project }: MainContentProps) {
   const [activeView, setActiveView] = useState<"preview" | "code">("preview");
   const previewRef = useRef<PreviewFrameHandle>(null);
+  const fsBridgeRef = useRef<FileSystemBridgeHandle>(null);
 
   const handleCaptureScreenshot = async () => {
     if (!previewRef.current) throw new Error("Preview nicht verfügbar");
     return previewRef.current.captureScreenshot();
   };
 
+  const handleGetFiles = () => {
+    if (!fsBridgeRef.current) return new Map<string, string>();
+    return fsBridgeRef.current.getAllFiles();
+  };
+
   return (
     <FileSystemProvider initialData={project?.data}>
       <ChatProvider projectId={project?.id} initialMessages={project?.messages}>
+        <FileSystemBridge ref={fsBridgeRef} />
         <div className="h-screen w-screen overflow-hidden bg-neutral-50">
           <ResizablePanelGroup direction="horizontal" className="h-full">
             {/* Left Panel - Chat */}
@@ -79,6 +98,7 @@ export function MainContent({ user, project }: MainContentProps) {
                     projectId={project?.id}
                     initialGithubRepo={project?.githubRepo}
                     onCaptureScreenshot={handleCaptureScreenshot}
+                    onGetFiles={handleGetFiles}
                   />
                 </div>
 
