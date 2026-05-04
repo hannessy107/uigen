@@ -3,6 +3,7 @@
 import { useEffect, useRef } from "react";
 import { MessageList } from "./MessageList";
 import { MessageInput } from "./MessageInput";
+import { ModelProgressBar } from "./ModelProgressBar";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useChat } from "@/lib/contexts/chat-context";
 
@@ -29,7 +30,10 @@ export function ChatInterface() {
           <MessageList messages={messages} isLoading={status === "streaming"} />
         </div>
       </ScrollArea>
-      <div className="mt-4 flex-shrink-0">
+      <div className="mt-3 flex-shrink-0">
+        <ModelProgressBar />
+      </div>
+      <div className="mt-2 flex-shrink-0">
         <MessageInput
           input={input}
           handleInputChange={handleInputChange}

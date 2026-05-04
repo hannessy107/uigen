@@ -3,11 +3,12 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
-import { Plus, LogOut, FolderOpen, ChevronDown } from "lucide-react";
+import { Plus, LogOut, FolderOpen, ChevronDown, Github } from "lucide-react";
 import { AuthDialog } from "@/components/auth/AuthDialog";
 import { signOut } from "@/actions";
 import { getProjects } from "@/actions/get-projects";
 import { createProject } from "@/actions/create-project";
+import { GitHubDialog } from "@/components/github/GitHubDialog";
 import {
   Popover,
   PopoverContent,
@@ -28,6 +29,8 @@ interface HeaderActionsProps {
     email: string;
   } | null;
   projectId?: string;
+  initialGithubRepo?: string | null;
+  onCaptureScreenshot?: () => Promise<string>;
 }
 
 interface Project {
@@ -37,7 +40,12 @@ interface Project {
   updatedAt: Date;
 }
 
-export function HeaderActions({ user, projectId }: HeaderActionsProps) {
+export function HeaderActions({
+  user,
+  projectId,
+  initialGithubRepo,
+  onCaptureScreenshot,
+}: HeaderActionsProps) {
   const router = useRouter();
   const [authDialogOpen, setAuthDialogOpen] = useState(false);
   const [authMode, setAuthMode] = useState<"signin" | "signup">("signin");
@@ -45,8 +53,9 @@ export function HeaderActions({ user, projectId }: HeaderActionsProps) {
   const [projects, setProjects] = useState<Project[]>([]);
   const [initialLoading, setInitialLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
+  const [githubDialogOpen, setGithubDialogOpen] = useState(false);
+  const [githubRepo, setGithubRepo] = useState<string | null>(initialGithubRepo ?? null);
 
-  // Load projects initially
   useEffect(() => {
     if (user && projectId) {
       getProjects()
@@ -56,7 +65,6 @@ export function HeaderActions({ user, projectId }: HeaderActionsProps) {
     }
   }, [user, projectId]);
 
-  // Refresh projects when popover opens
   useEffect(() => {
     if (user && projectsOpen) {
       getProjects().then(setProjects).catch(console.error);
@@ -153,6 +161,29 @@ export function HeaderActions({ user, projectId }: HeaderActionsProps) {
             </Command>
           </PopoverContent>
         </Popover>
+      )}
+
+      {projectId && onCaptureScreenshot && (
+        <>
+          <Button
+            variant="outline"
+            size="icon"
+            className="h-8 w-8"
+            onClick={() => setGithubDialogOpen(true)}
+            title="GitHub Issue erstellen"
+          >
+            <Github className="h-4 w-4" />
+          </Button>
+
+          <GitHubDialog
+            open={githubDialogOpen}
+            onOpenChange={setGithubDialogOpen}
+            projectId={projectId}
+            githubRepo={githubRepo}
+            onRepoSaved={setGithubRepo}
+            onCaptureScreenshot={onCaptureScreenshot}
+          />
+        </>
       )}
 
       <Button className="flex items-center gap-2 h-8" onClick={handleNewDesign}>

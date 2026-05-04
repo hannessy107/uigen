@@ -26,6 +26,7 @@ export async function getProject(projectId: string) {
     name: project.name,
     messages: JSON.parse(project.messages),
     data: JSON.parse(project.data),
+    githubRepo: project.githubRepo,
     createdAt: project.createdAt,
     updatedAt: project.updatedAt,
   };

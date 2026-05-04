@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, forwardRef, useImperativeHandle } from "react";
 import { useFileSystem } from "@/lib/contexts/file-system-context";
 import {
   createImportMap,
@@ -8,24 +8,45 @@ import {
 } from "@/lib/transform/jsx-transformer";
 import { AlertCircle } from "lucide-react";
 
-export function PreviewFrame() {
+export interface PreviewFrameHandle {
+  captureScreenshot: () => Promise<string>;
+}
+
+export const PreviewFrame = forwardRef<PreviewFrameHandle>((_, ref) => {
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const { getAllFiles, refreshTrigger } = useFileSystem();
   const [error, setError] = useState<string | null>(null);
   const [entryPoint, setEntryPoint] = useState<string>("/App.jsx");
   const [isFirstLoad, setIsFirstLoad] = useState(true);
 
+  useImperativeHandle(ref, () => ({
+    captureScreenshot: async () => {
+      const iframe = iframeRef.current;
+      if (!iframe?.contentDocument?.body) {
+        throw new Error("Preview nicht verfügbar");
+      }
+      const { default: html2canvas } = await import("html2canvas");
+      const canvas = await html2canvas(iframe.contentDocument.body, {
+        useCORS: true,
+        allowTaint: false,
+        width: iframe.offsetWidth,
+        height: iframe.offsetHeight,
+        windowWidth: iframe.offsetWidth,
+        windowHeight: iframe.offsetHeight,
+      });
+      return canvas.toDataURL("image/png");
+    },
+  }));
+
   useEffect(() => {
     const updatePreview = () => {
       try {
         const files = getAllFiles();
 
-        // Clear error first when we have files
         if (files.size > 0 && error) {
           setError(null);
         }
 
-        // Find the entry point - look for App.jsx, App.tsx, index.jsx, or index.tsx
         let foundEntryPoint = entryPoint;
         const possibleEntries = [
           "/App.jsx",
@@ -42,7 +63,6 @@ export function PreviewFrame() {
             foundEntryPoint = found;
             setEntryPoint(found);
           } else if (files.size > 0) {
-            // Just use the first .jsx/.tsx file found
             const firstJSX = Array.from(files.keys()).find(
               (path) => path.endsWith(".jsx") || path.endsWith(".tsx")
             );
@@ -62,7 +82,6 @@ export function PreviewFrame() {
           return;
         }
 
-        // We have files, so it's no longer the first load
         if (isFirstLoad) {
           setIsFirstLoad(false);
         }
@@ -79,14 +98,11 @@ export function PreviewFrame() {
 
         if (iframeRef.current) {
           const iframe = iframeRef.current;
-
-          // Need both allow-scripts and allow-same-origin for blob URLs in import map
           iframe.setAttribute(
             "sandbox",
             "allow-scripts allow-same-origin allow-forms"
           );
           iframe.srcdoc = previewHTML;
-
           setError(null);
         }
       } catch (err) {
@@ -157,4 +173,6 @@ export function PreviewFrame() {
       title="Preview"
     />
   );
-}
+});
+
+PreviewFrame.displayName = "PreviewFrame";
